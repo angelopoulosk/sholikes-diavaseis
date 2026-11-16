@@ -4,9 +4,9 @@
 // The kinds of place the map tells apart, each with its own colour.
 export const CATEGORIES = {
   school: { label: 'Σχολείο', color: '#ffd400' },
-  nipiagogeio: { label: 'Νηπιαγωγείο', color: '#3b82f6' },
-  stathmos_private: { label: 'Ιδιωτικός παιδικός σταθμός', color: '#a855f7' },
-  stathmos_public: { label: 'Δημοτικός παιδικός σταθμός', color: '#14b8a6' },
+  nipiagogeio: { label: 'Νηπιαγωγείο', color: '#06b6d4' },
+  stathmos_private: { label: 'Ιδιωτικός παιδικός σταθμός', color: '#e11d9c' },
+  stathmos_public: { label: 'Δημοτικός παιδικός σταθμός', color: '#1e3a8a' },
 };
 
 // OpenStreetMap uses amenity=kindergarten for both νηπιαγωγεία and παιδικούς
