@@ -44,6 +44,7 @@ test('incomplete or invalid audits are rejected', () => {
 test('Overpass query and parsing link crossings to the nearest school', () => {
   const q = buildQuery([37.97, 23.72, 37.99, 23.74], 150);
   assert.match(q, /around\.schools:150/);
+  assert.match(q, /\.crossings out body;/);
   assert.match(q, /37\.97000,23\.72000,37\.99000,23\.74000/);
   const { schools, crossings } = parseOverpass({ elements: [
     { type: 'way', id: 1, center: { lat: 37.98, lon: 23.73 }, tags: { amenity: 'school', name: '1ο Δημοτικό' } },

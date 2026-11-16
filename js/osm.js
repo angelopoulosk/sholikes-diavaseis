@@ -3,12 +3,13 @@
 
 export function buildQuery(bbox, radius) {
   // bbox = [south, west, north, east]
+  // Crossings need "out body": "out tags" would drop their coordinates.
   const b = bbox.map((n) => n.toFixed(5)).join(',');
   return `[out:json][timeout:25];
 nwr["amenity"~"^(school|kindergarten)$"](${b})->.schools;
 node["highway"="crossing"](around.schools:${radius})->.crossings;
-.schools out center tags;
-.crossings out tags;`;
+.schools out tags center;
+.crossings out body;`;
 }
 
 export function distanceMetres(a, b) {
