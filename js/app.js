@@ -66,11 +66,15 @@ function addPreschools() {
   const base = { source: 'preschools', minzoom: 11 };
   const isArea = ['==', ['geometry-type'], 'Polygon'];
   const color = ['get', 'color'];
-  map.addLayer({ id: 'pre-zone', type: 'line', ...base, filter: isArea,
-    paint: { 'line-color': color, 'line-opacity': 0.35, 'line-blur': 4,
-      'line-width': ['interpolate', ['linear'], ['zoom'], 11, 4, 14, 14, 17, 34] } });
+  // These outlines are often a single small building. A wide halo with sharp
+  // corners turns into a spiky smudge around them when zoomed out, so the halo
+  // has round corners, stays narrow and only appears at close zoom.
+  map.addLayer({ id: 'pre-zone', type: 'line', ...base, minzoom: 15, filter: isArea,
+    layout: { 'line-join': 'round', 'line-cap': 'round' },
+    paint: { 'line-color': color, 'line-opacity': 0.3, 'line-blur': 3,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 15, 4, 17, 14] } });
   map.addLayer({ id: 'pre-fill', type: 'fill', ...base, filter: isArea,
-    paint: { 'fill-color': color, 'fill-opacity': 0.55 } });
+    paint: { 'fill-color': color, 'fill-opacity': 0.8 } });
   map.addLayer({ id: 'pre-line', type: 'line', ...base, filter: isArea,
     paint: { 'line-color': '#1a1a1a',
       'line-width': ['interpolate', ['linear'], ['zoom'], 11, 0.5, 15, 2] } });
@@ -193,12 +197,14 @@ function scheduleLoad() {
 }
 
 async function loadView() {
+  // Inside the snapshot everything is already on the map at any zoom.
+  if (insideSnapshot(map.getBounds())) { updateStats(); return; }
   if (map.getZoom() < CONFIG.minDataZoom) {
     setStatus('Πλησίασε στον χάρτη για να φανούν σχολεία και διαβάσεις.');
     return;
   }
   const key = viewKey();
-  if (insideSnapshot(map.getBounds()) || state.loadedKeys.has(key)) { updateStats(); return; }
+  if (state.loadedKeys.has(key)) { updateStats(); return; }
   // Load a little beyond the screen so short pans need no new request.
   const v = map.getBounds();
   const padLat = (v.getNorth() - v.getSouth()) * 0.3;
