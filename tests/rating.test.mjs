@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { SECTIONS, ALL_CRITERIA, MAX_SCORE, score, isComplete } from '../js/rating.js';
 import { buildQuery, parseOverpass, distanceMetres, osmHints, classify } from '../js/osm.js';
 import { toFeature } from '../scripts/add_audit.mjs';
-import { toSnapshot } from '../scripts/build_snapshot.mjs';
+import { buildSnapshot, placesQuery, crossingsQuery } from '../js/snapshot.js';
 
 const pick = (index) => Object.fromEntries(
   ALL_CRITERIA.map((c) => [c.id, c.options.at(index)[0]]));
@@ -77,14 +77,29 @@ test('importer recomputes the grade and rejects bad records', () => {
   assert.throws(() => toFeature({ ...input, date: '16/11/2026' }), /date/);
 });
 
-test('snapshot keeps display tags and points each crossing at its school', () => {
-  const parsed = parseOverpass({ elements: [
-    { type: 'way', id: 1, center: { lat: 37.98, lon: 23.73 }, tags: { amenity: 'school', name: '1ο Δημοτικό' } },
-    { type: 'node', id: 3, lat: 37.9805, lon: 23.73, tags: { highway: 'crossing', crossing: 'zebra', source: 'survey' } },
-  ] });
-  const snap = toSnapshot(parsed, [37.6, 23.3, 38.4, 24.15], '2026-11-16');
-  assert.deepEqual(snap.schools, [{ id: 'way/1', lat: 37.98, lon: 23.73, name: '1ο Δημοτικό', cat: 'school' }]);
-  assert.deepEqual(snap.crossings[0], { id: 3, lat: 37.9805, lon: 23.73, s: 0, d: 56, tags: { crossing: 'zebra' } });
+test('snapshot keeps crossings within the radius of a place outline, with their nearest place', () => {
+  const square = [[37.98, 23.73], [37.981, 23.73], [37.981, 23.731], [37.98, 23.731], [37.98, 23.73]]
+    .map(([lat, lon]) => ({ lat, lon }));
+  const places = [
+    { type: 'way', id: 1, bounds: { minlat: 37.98, minlon: 23.73, maxlat: 37.981, maxlon: 23.731 }, geometry: square, tags: { amenity: 'school', name: '1ο Δημοτικό' } },
+    { type: 'node', id: 2, lat: 37.99, lon: 23.74, tags: { amenity: 'kindergarten', name: 'Παιδικός Σταθμός' } },
+    { type: 'way', id: 1, bounds: { minlat: 37.98, minlon: 23.73, maxlat: 37.981, maxlon: 23.731 }, geometry: square, tags: { amenity: 'school', name: '1ο Δημοτικό' } },
+  ];
+  const node = (id, lat, lon, tags = {}) => ({ type: 'node', id, lat, lon, tags: { highway: 'crossing', ...tags } });
+  const crossings = [
+    node(10, 37.9795, 23.7305, { crossing: 'zebra', source: 'survey' }), // 56 m south of the school edge
+    node(11, 37.9805, 23.7305), // inside the grounds: distance is to the nearest edge
+    node(12, 37.9775, 23.7305), // 278 m away
+    node(13, 37.9905, 23.74), // 56 m from the σταθμός
+    node(10, 37.9795, 23.7305), // duplicate from an overlapping tile
+  ];
+  const snap = buildSnapshot(places, crossings, { bbox: [37.6, 23.3, 38.4, 24.15], radius: 150, generated: '2026-11-16' });
+  assert.deepEqual(snap.schools.map((s) => [s.id, s.cat, Boolean(s.ring)]),
+    [['way/1', 'school', true], ['node/2', 'stathmos_private', false]]);
+  assert.deepEqual(snap.crossings.map((c) => [c.id, c.s, c.d]), [[10, 0, 56], [11, 0, 44], [13, 1, 56]]);
+  assert.deepEqual(snap.crossings[0].tags, { crossing: 'zebra' });
+  assert.match(placesQuery([37.6, 23.3, 38.4, 24.15]), /out tags geom;/);
+  assert.match(crossingsQuery([37.6, 23.3, 38.4, 24.15]), /out body;/);
 });
 
 test('places are sorted into schools, νηπιαγωγεία and public or private σταθμούς', () => {

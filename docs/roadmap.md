@@ -3,6 +3,7 @@
 ## Now (in this repository)
 
 - Map of schools and the crossings within 150 m of them, live from OpenStreetMap
+- Snapshot of Attica's schools, pre-schools and crossings (`data/snapshot.json`), so the map loads without waiting on the public OpenStreetMap servers; live queries elsewhere
 - 18-question audit with A to F grade, submitted as a GitHub issue
 - Importer that recomputes scores, with tests
 - Standards, rating method, accountability, management, promotion and coalition notes
@@ -16,7 +17,7 @@
 5. **School and municipality pages**: report card per school, league table per municipality.
 6. **Easier submission**: a form with a small backend and moderation, so parents do not need a GitHub account.
 7. **Collision overlay** from [greece-road-collisions](https://github.com/angelopoulosk/greece-road-collisions): recorded collisions within 150 m of each school.
-8. **Offline snapshot** of the OSM data so the map does not depend on the public Overpass servers.
+8. **Weekly snapshot job**: a scheduled GitHub Action that runs `scripts/build_snapshot.mjs` every Monday and commits `data/snapshot.json`, so the map data never gets more than a week old. Until then the snapshot is rebuilt by hand.
 
 ## Later
 
