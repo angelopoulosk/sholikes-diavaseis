@@ -2,6 +2,9 @@
 export const CONFIG = {
   // GitHub repository that receives audit submissions as issues.
   repo: 'angelopoulosk/sholikes-diavaseis',
+  // Base map: any style on the OpenMapTiles schema whose vector source is named
+  // "openmaptiles" and that ships the "Noto Sans Bold" font.
+  style: 'https://tiles.openfreemap.org/styles/positron',
   // Map start: central Athens.
   center: [37.9838, 23.7275],
   zoom: 16,

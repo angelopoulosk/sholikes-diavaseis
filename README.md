@@ -12,7 +12,7 @@ international standards, publishes its condition and names the body responsible 
 
 | | |
 |---|---|
-| [`index.html`](index.html) | The map. Schools and the crossings within 150 m of them, live from OpenStreetMap, coloured by grade. Click a crossing to see or submit an audit. |
+| [`index.html`](index.html) | The map (MapLibre GL JS on OpenFreeMap tiles). School grounds are highlighted in yellow from the base map's vector tiles; the crossings within 150 m of each school come live from OpenStreetMap and are coloured by grade. Click a crossing to see or submit an audit. |
 | [`js/rating.js`](js/rating.js) | The scoring model: 18 questions, 100 points, grades A to F, minimum pass C (3 stars). |
 | [`data/audits.geojson`](data/audits.geojson) | Published audits. Empty until the pilot starts. |
 | [`docs/standards.md`](docs/standards.md) | International and Greek standards for school crossings |

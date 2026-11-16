@@ -2,7 +2,7 @@ import { CONFIG } from './config.js';
 import { SECTIONS, CAPS, GRADES, score, isComplete, gradeFor } from './rating.js';
 import { buildQuery, parseOverpass, osmHints } from './osm.js';
 
-/* global L */
+/* global maplibregl */
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, attrs = {}, ...children) => {
@@ -18,15 +18,60 @@ const el = (tag, attrs = {}, ...children) => {
 };
 
 const UNRATED = '#6b7280';
-const map = L.map('map', { zoomControl: false }).setView(CONFIG.center, CONFIG.zoom);
-L.control.zoom({ position: 'bottomright' }).addTo(map);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">Συντελεστές OpenStreetMap</a>',
-}).addTo(map);
+const map = new maplibregl.Map({
+  container: 'map',
+  style: CONFIG.style,
+  center: [CONFIG.center[1], CONFIG.center[0]],
+  zoom: CONFIG.zoom,
+});
+map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
 
-const schoolLayer = L.layerGroup().addTo(map);
-const crossingLayer = L.layerGroup().addTo(map);
+// School grounds come straight from the base map's vector tiles (OpenMapTiles
+// schema): a halo, a yellow fill, a dark outline and the school's name.
+const SCHOOL_LAYERS = ['school-zone', 'school-fill', 'school-line', 'school-name'];
+
+function addSchools() {
+  const isSchool = ['in', ['get', 'class'], ['literal', ['school', 'kindergarten']]];
+  const base = { source: 'openmaptiles', 'source-layer': 'landuse', minzoom: 11, filter: isSchool };
+  map.addLayer({ id: 'school-zone', type: 'line', ...base,
+    paint: { 'line-color': '#ffc400', 'line-opacity': 0.35, 'line-blur': 4,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 11, 4, 14, 14, 17, 34] } });
+  map.addLayer({ id: 'school-fill', type: 'fill', ...base,
+    paint: { 'fill-color': '#ffd400', 'fill-opacity': 0.55 } });
+  map.addLayer({ id: 'school-line', type: 'line', ...base,
+    paint: { 'line-color': '#1a1a1a',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 11, 0.5, 15, 2] } });
+  map.addLayer({ id: 'school-name', type: 'symbol',
+    source: 'openmaptiles', 'source-layer': 'poi', minzoom: 15,
+    filter: ['==', ['get', 'class'], 'school'],
+    layout: {
+      'text-field': ['concat', '🏫 ', ['coalesce', ['get', 'name'], 'Σχολείο']],
+      'text-font': ['Noto Sans Bold'], 'text-size': 11,
+      'text-max-width': 9, 'text-optional': true },
+    paint: { 'text-color': '#3a2c00', 'text-halo-color': '#fff3b0', 'text-halo-width': 1.5 } });
+}
+
+function setSchools(on) {
+  for (const id of SCHOOL_LAYERS) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
+  }
+}
+
+// Crossings are our own data layer and stay on top of the school highlight.
+function addCrossings() {
+  map.addSource('crossings', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({ id: 'crossings', type: 'circle', source: 'crossings',
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 14, 4, 17, 9],
+      'circle-color': ['get', 'color'],
+      'circle-stroke-color': '#111', 'circle-stroke-width': 2 } });
+  map.on('click', 'crossings', (e) => {
+    const c = state.crossings.get(e.features[0].properties.id);
+    if (c) select(c);
+  });
+  map.on('mouseenter', 'crossings', () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', 'crossings', () => { map.getCanvas().style.cursor = ''; });
+}
 
 const state = {
   audits: new Map(), // osm node id -> latest audit properties
@@ -85,14 +130,19 @@ async function loadView() {
   }
   const key = viewKey();
   if (state.loadedKeys.has(key)) { updateStats(); return; }
-  const b = map.getBounds().pad(0.3);
+  // Load a little beyond the screen so short pans need no new request.
+  const v = map.getBounds();
+  const padLat = (v.getNorth() - v.getSouth()) * 0.3;
+  const padLon = (v.getEast() - v.getWest()) * 0.3;
   setStatus('Φόρτωση από το OpenStreetMap…');
   try {
     const json = await overpass(buildQuery(
-      [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()], CONFIG.schoolRadius));
+      [v.getSouth() - padLat, v.getWest() - padLon, v.getNorth() + padLat, v.getEast() + padLon],
+      CONFIG.schoolRadius));
     const { schools, crossings } = parseOverpass(json);
-    for (const s of schools) if (!state.schools.has(s.id)) { state.schools.set(s.id, s); drawSchool(s); }
-    for (const c of crossings) if (!state.crossings.has(c.id)) { state.crossings.set(c.id, c); drawCrossing(c); }
+    for (const s of schools) state.schools.set(s.id, s);
+    for (const c of crossings) if (!state.crossings.has(c.id)) state.crossings.set(c.id, c);
+    drawCrossings();
     state.loadedKeys.add(key);
     updateStats();
   } catch (err) {
@@ -103,30 +153,27 @@ async function loadView() {
 
 // ---------- map drawing ----------
 
-function drawSchool(s) {
-  L.marker([s.lat, s.lon], {
-    icon: L.divIcon({ className: 'school-pin', html: '<span>Σ</span>', iconSize: [22, 22] }),
-    keyboard: false,
-  // An element, not a string: Leaflet would render a string tooltip as HTML.
-  }).bindTooltip(el('span', {}, s.name)).addTo(schoolLayer);
-}
-
 function colorFor(crossing) {
   const audit = state.audits.get(crossing.id);
   return audit ? GRADES.find((g) => g.grade === audit.grade)?.color || UNRATED : UNRATED;
 }
 
-function drawCrossing(c) {
-  c.marker = L.circleMarker([c.lat, c.lon], {
-    radius: 8, weight: 2, color: '#111', fillColor: colorFor(c), fillOpacity: 1,
-  }).on('click', () => select(c)).addTo(crossingLayer);
+function drawCrossings() {
+  map.getSource('crossings').setData({
+    type: 'FeatureCollection',
+    features: [...state.crossings.values()].map((c) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [c.lon, c.lat] },
+      properties: { id: c.id, color: colorFor(c) },
+    })),
+  });
 }
 
 function updateStats() {
   const b = map.getBounds();
-  const inView = [...state.crossings.values()].filter((c) => b.contains([c.lat, c.lon]));
+  const inView = [...state.crossings.values()].filter((c) => b.contains([c.lon, c.lat]));
   const rated = inView.filter((c) => state.audits.has(c.id)).length;
-  const schools = [...state.schools.values()].filter((s) => b.contains([s.lat, s.lon])).length;
+  const schools = [...state.schools.values()].filter((s) => b.contains([s.lon, s.lat])).length;
   setStatus(`${schools} σχολεία · ${inView.length} σχολικές διαβάσεις · ${rated} αξιολογημένες`);
 }
 
@@ -293,17 +340,28 @@ function openAudit(c) {
 
 // ---------- legend & start ----------
 
+const swatch = (color, className = '') => {
+  const dot = el('i', { class: className });
+  dot.style.background = color;
+  return dot;
+};
+const schoolToggle = el('input', { type: 'checkbox', checked: '', onchange: (e) => setSchools(e.target.checked) });
 $('#legend').append(
-  ...GRADES.map((g) => {
-    const dot = el('i', {});
-    dot.style.background = g.color;
-    return el('span', {}, dot, `${g.grade} ${g.label}`);
-  }),
-  (() => { const dot = el('i', {}); dot.style.background = UNRATED; return el('span', {}, dot, 'Χωρίς αξιολόγηση'); })());
+  ...GRADES.map((g) => el('span', {}, swatch(g.color), `${g.grade} ${g.label}`)),
+  el('span', {}, swatch(UNRATED), 'Χωρίς αξιολόγηση'),
+  el('label', {}, schoolToggle, swatch('#ffd400', 'square'), 'Σχολικοί χώροι'));
 
 $('#about-open').addEventListener('click', () => $('#about').showModal());
-$('#locate').addEventListener('click', () => map.locate({ setView: true, maxZoom: 17 }));
+$('#locate').addEventListener('click', () => {
+  navigator.geolocation?.getCurrentPosition((pos) => {
+    map.flyTo({ center: [pos.coords.longitude, pos.coords.latitude], zoom: 17 });
+  });
+});
 
-map.on('moveend', scheduleLoad);
-await loadAudits();
-loadView();
+map.on('load', async () => {
+  addSchools();
+  addCrossings();
+  await loadAudits();
+  map.on('moveend', scheduleLoad);
+  loadView();
+});
