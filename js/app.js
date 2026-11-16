@@ -107,7 +107,8 @@ function drawSchool(s) {
   L.marker([s.lat, s.lon], {
     icon: L.divIcon({ className: 'school-pin', html: '<span>Σ</span>', iconSize: [22, 22] }),
     keyboard: false,
-  }).bindTooltip(s.name).addTo(schoolLayer);
+  // An element, not a string: Leaflet would render a string tooltip as HTML.
+  }).bindTooltip(el('span', {}, s.name)).addTo(schoolLayer);
 }
 
 function colorFor(crossing) {
