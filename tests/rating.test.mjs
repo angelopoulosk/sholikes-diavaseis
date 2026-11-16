@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SECTIONS, ALL_CRITERIA, MAX_SCORE, score, isComplete } from '../js/rating.js';
-import { buildQuery, parseOverpass, distanceMetres, osmHints } from '../js/osm.js';
+import { buildQuery, parseOverpass, distanceMetres, osmHints, classify } from '../js/osm.js';
 import { toFeature } from '../scripts/add_audit.mjs';
 import { toSnapshot } from '../scripts/build_snapshot.mjs';
 
@@ -43,7 +43,8 @@ test('incomplete or invalid audits are rejected', () => {
 
 test('Overpass query and parsing link crossings to the nearest school', () => {
   const q = buildQuery([37.97, 23.72, 37.99, 23.74], 150);
-  assert.match(q, /around\.schools:150/);
+  assert.match(q, /around\.places:150/);
+  assert.match(q, /\.pre out tags geom;/);
   assert.match(q, /\.crossings out body;/);
   assert.match(q, /37\.97000,23\.72000,37\.99000,23\.74000/);
   const { schools, crossings } = parseOverpass({ elements: [
@@ -82,6 +83,32 @@ test('snapshot keeps display tags and points each crossing at its school', () =>
     { type: 'node', id: 3, lat: 37.9805, lon: 23.73, tags: { highway: 'crossing', crossing: 'zebra', source: 'survey' } },
   ] });
   const snap = toSnapshot(parsed, [37.6, 23.3, 38.4, 24.15], '2026-11-16');
-  assert.deepEqual(snap.schools, [{ id: 'way/1', lat: 37.98, lon: 23.73, name: '1ο Δημοτικό' }]);
+  assert.deepEqual(snap.schools, [{ id: 'way/1', lat: 37.98, lon: 23.73, name: '1ο Δημοτικό', cat: 'school' }]);
   assert.deepEqual(snap.crossings[0], { id: 3, lat: 37.9805, lon: 23.73, s: 0, d: 56, tags: { crossing: 'zebra' } });
+});
+
+test('places are sorted into schools, νηπιαγωγεία and public or private σταθμούς', () => {
+  const kind = (tags) => classify(tags);
+  assert.equal(kind({ amenity: 'school', name: '5ο Γυμνάσιο' }), 'school');
+  assert.equal(kind({ amenity: 'kindergarten', name: '85ο Νηπιαγωγείο Αθηνών' }), 'nipiagogeio');
+  assert.equal(kind({ amenity: 'kindergarten' }), 'nipiagogeio');
+  assert.equal(kind({ amenity: 'kindergarten', name: 'Παιδικός Σταθμός Τα Αστεράκια' }), 'stathmos_private');
+  assert.equal(kind({ amenity: 'kindergarten', name: 'ΒΡΕΦΟΝΗΠΙΑΚΟΣ ΣΤΑΘΜΟΣ' }), 'stathmos_private');
+  assert.equal(kind({ amenity: 'childcare', name: 'Little Stars' }), 'stathmos_private');
+  assert.equal(kind({ amenity: 'kindergarten', name: 'Δημοτικός Παιδικός Σταθμός Κυψέλης' }), 'stathmos_public');
+  assert.equal(kind({ amenity: 'childcare', 'operator:type': 'public' }), 'stathmos_public');
+  assert.equal(kind({ amenity: 'kindergarten', name: 'Ιδιωτικός Παιδικός Σταθμός Δήμου 12' }), 'stathmos_private');
+});
+
+test('a pre-school mapped as a closed way keeps its outline, a node does not', () => {
+  const { schools } = parseOverpass({ elements: [
+    { type: 'way', id: 9, bounds: { minlat: 37.98, minlon: 23.73, maxlat: 37.981, maxlon: 23.731 },
+      geometry: [{ lat: 37.98, lon: 23.73 }, { lat: 37.981, lon: 23.73 }, { lat: 37.981, lon: 23.731 }, { lat: 37.98, lon: 23.73 }],
+      tags: { amenity: 'kindergarten', name: '3ο Νηπιαγωγείο' } },
+    { type: 'node', id: 10, lat: 37.99, lon: 23.74, tags: { amenity: 'childcare' } },
+  ] });
+  assert.equal(schools[0].ring.length, 4);
+  assert.deepEqual(schools[0].ring[0], [23.73, 37.98]);
+  assert.ok(Math.abs(schools[0].lat - 37.9805) < 1e-9);
+  assert.deepEqual([schools[1].cat, schools[1].name, schools[1].ring], ['stathmos_private', 'Ιδιωτικός παιδικός σταθμός', undefined]);
 });

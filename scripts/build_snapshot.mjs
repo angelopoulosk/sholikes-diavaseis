@@ -19,7 +19,8 @@ const CROSSING_TAGS = ['crossing', 'crossing:markings', 'crossing:signals', 'cro
 // index into the schools list.
 export function toSnapshot(parsed, bbox, generated) {
   const schools = parsed.schools.map((s) => ({
-    id: s.id, lat: +s.lat.toFixed(6), lon: +s.lon.toFixed(6), name: s.name,
+    id: s.id, lat: +s.lat.toFixed(6), lon: +s.lon.toFixed(6), name: s.name, cat: s.cat,
+    ...(s.ring ? { ring: s.ring } : {}),
   }));
   const index = new Map(parsed.schools.map((s, i) => [s.id, i]));
   const crossings = parsed.crossings.map((c) => ({

@@ -1,6 +1,6 @@
 import { CONFIG } from './config.js';
 import { SECTIONS, CAPS, GRADES, score, isComplete, gradeFor } from './rating.js';
-import { buildQuery, parseOverpass, osmHints } from './osm.js';
+import { CATEGORIES, buildQuery, parseOverpass, osmHints } from './osm.js';
 
 /* global maplibregl */
 
@@ -28,10 +28,12 @@ map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom
 
 // School grounds come straight from the base map's vector tiles (OpenMapTiles
 // schema): a halo, a yellow fill, a dark outline and the school's name.
-const SCHOOL_LAYERS = ['school-zone', 'school-fill', 'school-line', 'school-name'];
+const SCHOOL_LAYERS = ['school-zone', 'school-fill', 'school-line', 'school-name',
+  'pre-zone', 'pre-fill', 'pre-line', 'pre-point', 'pre-name'];
 
 function addSchools() {
-  const isSchool = ['in', ['get', 'class'], ['literal', ['school', 'kindergarten']]];
+  // Only schools here: νηπιαγωγεία and παιδικοί σταθμοί get their own colours below.
+  const isSchool = ['==', ['get', 'class'], 'school'];
   const base = { source: 'openmaptiles', 'source-layer': 'landuse', minzoom: 11, filter: isSchool };
   map.addLayer({ id: 'school-zone', type: 'line', ...base,
     paint: { 'line-color': '#ffc400', 'line-opacity': 0.35, 'line-blur': 4,
@@ -43,7 +45,7 @@ function addSchools() {
       'line-width': ['interpolate', ['linear'], ['zoom'], 11, 0.5, 15, 2] } });
   map.addLayer({ id: 'school-name', type: 'symbol',
     source: 'openmaptiles', 'source-layer': 'poi', minzoom: 15,
-    filter: ['==', ['get', 'class'], 'school'],
+    filter: ['all', ['==', ['get', 'class'], 'school'], ['!=', ['get', 'subclass'], 'kindergarten']],
     layout: {
       'text-field': ['concat', '🏫 ', ['coalesce', ['get', 'name'], 'Σχολείο']],
       'text-font': ['Noto Sans Bold'], 'text-size': 11,
@@ -55,6 +57,45 @@ function setSchools(on) {
   for (const id of SCHOOL_LAYERS) {
     if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', on ? 'visible' : 'none');
   }
+}
+
+// Νηπιαγωγεία and παιδικοί σταθμοί cannot be told apart in the base map tiles,
+// so they are drawn from our own OpenStreetMap data, coloured by category.
+function addPreschools() {
+  map.addSource('preschools', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  const base = { source: 'preschools', minzoom: 11 };
+  const isArea = ['==', ['geometry-type'], 'Polygon'];
+  const color = ['get', 'color'];
+  map.addLayer({ id: 'pre-zone', type: 'line', ...base, filter: isArea,
+    paint: { 'line-color': color, 'line-opacity': 0.35, 'line-blur': 4,
+      'line-width': ['interpolate', ['linear'], ['zoom'], 11, 4, 14, 14, 17, 34] } });
+  map.addLayer({ id: 'pre-fill', type: 'fill', ...base, filter: isArea,
+    paint: { 'fill-color': color, 'fill-opacity': 0.55 } });
+  map.addLayer({ id: 'pre-line', type: 'line', ...base, filter: isArea,
+    paint: { 'line-color': '#1a1a1a',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 11, 0.5, 15, 2] } });
+  // Places mapped as a single point get a coloured square.
+  map.addLayer({ id: 'pre-point', type: 'circle', ...base, filter: ['==', ['geometry-type'], 'Point'],
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['zoom'], 11, 2, 14, 5, 17, 11],
+      'circle-color': color, 'circle-opacity': 0.75,
+      'circle-stroke-color': '#1a1a1a', 'circle-stroke-width': 1.5 } });
+  map.addLayer({ id: 'pre-name', type: 'symbol', ...base, minzoom: 15,
+    layout: {
+      'text-field': ['get', 'name'], 'text-font': ['Noto Sans Bold'], 'text-size': 11,
+      'text-max-width': 9, 'text-offset': [0, 1.2], 'text-optional': true },
+    paint: { 'text-color': '#1a1a1a', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 } });
+}
+
+function drawPreschools() {
+  map.getSource('preschools').setData({
+    type: 'FeatureCollection',
+    features: [...state.schools.values()].filter((p) => p.cat !== 'school').map((p) => ({
+      type: 'Feature',
+      geometry: p.ring ? { type: 'Polygon', coordinates: [p.ring] } : { type: 'Point', coordinates: [p.lon, p.lat] },
+      properties: { name: p.name, color: CATEGORIES[p.cat].color },
+    })),
+  });
 }
 
 // Crossings are our own data layer and stay on top of the school highlight.
@@ -127,6 +168,7 @@ async function loadSnapshot() {
       state.crossings.set(c.id, { ...c, school: snap.schools[c.s] || null, schoolDistance: c.d });
     }
     state.snapshotBbox = snap.bbox;
+    drawPreschools();
     drawCrossings();
   } catch (err) {
     console.warn('Δεν υπάρχει αποθηκευμένο στιγμιότυπο· χρήση ζωντανών δεδομένων', err);
@@ -168,6 +210,7 @@ async function loadView() {
       CONFIG.schoolRadius));
     const { schools, crossings } = parseOverpass(json);
     for (const s of schools) state.schools.set(s.id, s);
+    drawPreschools();
     for (const c of crossings) if (!state.crossings.has(c.id)) state.crossings.set(c.id, c);
     drawCrossings();
     state.loadedKeys.add(key);
@@ -201,7 +244,7 @@ function updateStats() {
   const inView = [...state.crossings.values()].filter((c) => b.contains([c.lon, c.lat]));
   const rated = inView.filter((c) => state.audits.has(c.id)).length;
   const schools = [...state.schools.values()].filter((s) => b.contains([s.lon, s.lat])).length;
-  setStatus(`${schools} σχολεία · ${inView.length} σχολικές διαβάσεις · ${rated} αξιολογημένες`);
+  setStatus(`${schools} σχολεία και σταθμοί · ${inView.length} σχολικές διαβάσεις · ${rated} αξιολογημένες`);
 }
 
 function setStatus(text) { $('#status').textContent = text; }
@@ -237,6 +280,7 @@ function select(c) {
   const audit = state.audits.get(c.id);
   const parts = [
     el('p', { class: 'eyebrow' }, c.school ? `${c.schoolDistance} μ. από: ${c.school.name}` : 'Σχολική διάβαση'),
+    ...(c.school ? [el('p', { class: 'muted small kind' }, CATEGORIES[c.school.cat]?.label || '')] : []),
   ];
 
   if (audit) {
@@ -376,7 +420,8 @@ const schoolToggle = el('input', { type: 'checkbox', checked: '', onchange: (e) 
 $('#legend').append(
   ...GRADES.map((g) => el('span', {}, swatch(g.color), `${g.grade} ${g.label}`)),
   el('span', {}, swatch(UNRATED), 'Χωρίς αξιολόγηση'),
-  el('label', {}, schoolToggle, swatch('#ffd400', 'square'), 'Σχολικοί χώροι'));
+  el('label', {}, schoolToggle, 'Σχολεία και σταθμοί'),
+  ...Object.values(CATEGORIES).map((c) => el('span', {}, swatch(c.color, 'square'), c.label)));
 
 $('#about-open').addEventListener('click', () => $('#about').showModal());
 $('#locate').addEventListener('click', () => {
@@ -387,6 +432,7 @@ $('#locate').addEventListener('click', () => {
 
 map.on('load', async () => {
   addSchools();
+  addPreschools();
   addCrossings();
   await Promise.all([loadAudits(), loadSnapshot()]);
   map.on('moveend', scheduleLoad);
