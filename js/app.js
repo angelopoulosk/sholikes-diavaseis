@@ -105,7 +105,8 @@ function drawPreschools() {
 // Crossings are our own data layer and stay on top of the school highlight.
 function addCrossings() {
   map.addSource('crossings', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-  map.addLayer({ id: 'crossings', type: 'circle', source: 'crossings',
+  // Crossings only appear at street level; zoomed out, the map shows schools alone.
+  map.addLayer({ id: 'crossings', type: 'circle', source: 'crossings', minzoom: CONFIG.minDataZoom,
     paint: {
       'circle-radius': ['interpolate', ['linear'], ['zoom'], 14, 4, 17, 9],
       'circle-color': ['get', 'color'],
@@ -250,6 +251,10 @@ function updateStats() {
   const inView = [...state.crossings.values()].filter((c) => b.contains([c.lon, c.lat]));
   const rated = inView.filter((c) => state.audits.has(c.id)).length;
   const schools = [...state.schools.values()].filter((s) => b.contains([s.lon, s.lat])).length;
+  if (map.getZoom() < CONFIG.minDataZoom) {
+    setStatus(`${schools} σχολεία και σταθμοί · πλησίασε για να δεις τις διαβάσεις`);
+    return;
+  }
   setStatus(`${schools} σχολεία και σταθμοί · ${inView.length} σχολικές διαβάσεις · ${rated} αξιολογημένες`);
 }
 

@@ -8,7 +8,7 @@ export const CONFIG = {
   // Map start: central Athens.
   center: [37.9838, 23.7275],
   zoom: 16,
-  // Schools and crossings are only loaded at this zoom or closer.
+  // Crossings are shown, and live data is loaded, only at this zoom or closer.
   minDataZoom: 15,
   // A crossing counts as a "school crossing" when it is this close (metres) to a school.
   schoolRadius: 150,
