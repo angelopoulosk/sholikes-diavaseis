@@ -12,10 +12,16 @@ export const CONFIG = {
   minDataZoom: 15,
   // A crossing counts as a "school crossing" when it is this close (metres) to a school.
   schoolRadius: 150,
-  // Overpass API mirrors, tried in order.
+  // Overpass API mirrors. The map asks all of them at once and uses the first answer.
   overpass: [
     'https://overpass-api.de/api/interpreter',
+    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
   ],
+  // Prebuilt copy of schools and crossings for this area [south, west, north, east]
+  // (Attica mainland). Inside it the map needs no live query.
+  snapshot: 'data/snapshot.json',
+  snapshotBbox: [37.60, 23.30, 38.40, 24.15],
   audits: 'data/audits.geojson',
 };

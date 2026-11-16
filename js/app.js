@@ -97,18 +97,45 @@ async function loadAudits() {
   }
 }
 
+// Ask every mirror at once and take the first good answer: the public servers
+// are often busy, and one slow mirror should not hold up the map.
 async function overpass(query) {
-  let lastError;
-  for (const url of CONFIG.overpass) {
-    try {
-      const res = await fetch(url, { method: 'POST', body: new URLSearchParams({ data: query }) });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
+  try {
+    return await Promise.any(CONFIG.overpass.map(async (url) => {
+      const res = await fetch(url, {
+        method: 'POST', body: new URLSearchParams({ data: query }), signal: controller.signal,
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch (err) {
-      lastError = err;
-    }
+      return res.json();
+    }));
+  } finally {
+    clearTimeout(timer);
+    controller.abort();
   }
-  throw lastError;
+}
+
+// The prebuilt snapshot covers the pilot region; live queries are only needed outside it.
+async function loadSnapshot() {
+  try {
+    const res = await fetch(CONFIG.snapshot, { cache: 'no-cache' });
+    if (!res.ok) return;
+    const snap = await res.json();
+    for (const sc of snap.schools) state.schools.set(sc.id, sc);
+    for (const c of snap.crossings) {
+      state.crossings.set(c.id, { ...c, school: snap.schools[c.s] || null, schoolDistance: c.d });
+    }
+    state.snapshotBbox = snap.bbox;
+    drawCrossings();
+  } catch (err) {
+    console.warn('Δεν υπάρχει αποθηκευμένο στιγμιότυπο· χρήση ζωντανών δεδομένων', err);
+  }
+}
+
+function insideSnapshot(v) {
+  const b = state.snapshotBbox;
+  return b && v.getSouth() >= b[0] && v.getWest() >= b[1] && v.getNorth() <= b[2] && v.getEast() <= b[3];
 }
 
 function viewKey() {
@@ -129,12 +156,12 @@ async function loadView() {
     return;
   }
   const key = viewKey();
-  if (state.loadedKeys.has(key)) { updateStats(); return; }
+  if (insideSnapshot(map.getBounds()) || state.loadedKeys.has(key)) { updateStats(); return; }
   // Load a little beyond the screen so short pans need no new request.
   const v = map.getBounds();
   const padLat = (v.getNorth() - v.getSouth()) * 0.3;
   const padLon = (v.getEast() - v.getWest()) * 0.3;
-  setStatus('Φόρτωση από το OpenStreetMap…');
+  setStatus('Φόρτωση από το OpenStreetMap (μπορεί να πάρει έως ένα λεπτό)…');
   try {
     const json = await overpass(buildQuery(
       [v.getSouth() - padLat, v.getWest() - padLon, v.getNorth() + padLat, v.getEast() + padLon],
@@ -361,7 +388,7 @@ $('#locate').addEventListener('click', () => {
 map.on('load', async () => {
   addSchools();
   addCrossings();
-  await loadAudits();
+  await Promise.all([loadAudits(), loadSnapshot()]);
   map.on('moveend', scheduleLoad);
   loadView();
 });

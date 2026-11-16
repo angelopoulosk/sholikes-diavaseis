@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { SECTIONS, ALL_CRITERIA, MAX_SCORE, score, isComplete } from '../js/rating.js';
 import { buildQuery, parseOverpass, distanceMetres, osmHints } from '../js/osm.js';
 import { toFeature } from '../scripts/add_audit.mjs';
+import { toSnapshot } from '../scripts/build_snapshot.mjs';
 
 const pick = (index) => Object.fromEntries(
   ALL_CRITERIA.map((c) => [c.id, c.options.at(index)[0]]));
@@ -72,4 +73,14 @@ test('importer recomputes the grade and rejects bad records', () => {
   assert.deepEqual(f.geometry.coordinates, [23.73, 37.98]);
   assert.throws(() => toFeature({ ...input, lat: 51.5, lon: -0.1 }), /outside Greece/);
   assert.throws(() => toFeature({ ...input, date: '16/11/2026' }), /date/);
+});
+
+test('snapshot keeps display tags and points each crossing at its school', () => {
+  const parsed = parseOverpass({ elements: [
+    { type: 'way', id: 1, center: { lat: 37.98, lon: 23.73 }, tags: { amenity: 'school', name: '1ο Δημοτικό' } },
+    { type: 'node', id: 3, lat: 37.9805, lon: 23.73, tags: { highway: 'crossing', crossing: 'zebra', source: 'survey' } },
+  ] });
+  const snap = toSnapshot(parsed, [37.6, 23.3, 38.4, 24.15], '2026-11-16');
+  assert.deepEqual(snap.schools, [{ id: 'way/1', lat: 37.98, lon: 23.73, name: '1ο Δημοτικό' }]);
+  assert.deepEqual(snap.crossings[0], { id: 3, lat: 37.9805, lon: 23.73, s: 0, d: 56, tags: { crossing: 'zebra' } });
 });
