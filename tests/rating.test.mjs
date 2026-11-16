@@ -112,6 +112,8 @@ test('places are sorted into schools, νηπιαγωγεία and public or priva
   assert.equal(kind({ amenity: 'childcare', name: 'Little Stars' }), 'stathmos_private');
   assert.equal(kind({ amenity: 'kindergarten', name: 'Δημοτικός Παιδικός Σταθμός Κυψέλης' }), 'stathmos_public');
   assert.equal(kind({ amenity: 'childcare', 'operator:type': 'public' }), 'stathmos_public');
+  assert.equal(kind({ amenity: 'kindergarten', name: '10ος Βρεφονηπιακός Σταθμός' }), 'stathmos_public');
+  assert.equal(kind({ amenity: 'kindergarten', name: '10ο Νηπιαγωγείο' }), 'nipiagogeio');
   assert.equal(kind({ amenity: 'kindergarten', name: 'Ιδιωτικός Παιδικός Σταθμός Δήμου 12' }), 'stathmos_private');
 });
 

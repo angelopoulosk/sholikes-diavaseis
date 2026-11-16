@@ -13,10 +13,13 @@ export const CATEGORIES = {
 // σταθμούς and rarely records who runs them, so the name decides:
 // - a name that says παιδικός / βρεφικός / βρεφονηπιακός σταθμός is a σταθμός;
 // - a σταθμός is public only when its tags or name say so (δημοτικός, δήμου,
-//   κρατικός, δημόσιος); every other σταθμός is counted as private.
+//   κρατικός, δημόσιος) or its name starts with a number (10ος …); every other
+//   σταθμός is counted as private.
 const STATHMOS = /παιδικ|βρεφ|σταθμ|nursery|day ?care|creche/i;
 const PUBLIC = /δημοτικ|δήμου|δημου|κρατικ|δημόσι|δημοσι|municipal/i;
 const PRIVATE = /ιδιωτικ|private/i;
+// Numbered σταθμοί («10ος Βρεφονηπιακός Σταθμός») belong to a municipality's network.
+const NUMBERED = /^\s*\d+\s*(ος|ης|ο|η)(\s|$)/i;
 const plain = (text) => (text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
 export function classify(tags) {
@@ -27,7 +30,9 @@ export function classify(tags) {
   if (!isStathmos) return 'nipiagogeio';
   const owner = plain(t['operator:type']);
   if (PRIVATE.test(owner) || PRIVATE.test(name)) return 'stathmos_private';
-  if (['public', 'government', 'municipal'].includes(owner) || PUBLIC.test(name)) return 'stathmos_public';
+  if (['public', 'government', 'municipal'].includes(owner) || PUBLIC.test(name) || NUMBERED.test(plain(t.name))) {
+    return 'stathmos_public';
+  }
   return 'stathmos_private';
 }
 
